@@ -2,8 +2,6 @@ from flask import Flask,jsonify
 from flask_pymongo import PyMongo
 from flask import request
 
-import threading
-import threadpool
 import concurrent.futures
 import timeit
 import requests
@@ -32,6 +30,7 @@ def fetch_one(url,app,itemName):
             Jresponse = requests.get(url).text
         except requests.ConnectionError:
             print(" *** System Message *** Error: Connection Error")
+
         # convert data to json and save to MongoDB
         data = json.loads(Jresponse)
         mongo.db[itemName].insert_many(data['findCompletedItemsResponse'][0]['searchResult'][0]['item'])
@@ -55,22 +54,14 @@ def fetch_data(itemName):
     # first get one page of data to see how many pages exist
     totalPage = get_total_page(urlBeforePage)
 
-    # keep track of threads
+    # generate urls to be fetched
     urls = []
-
     for i in range(1, totalPage):
         urls.append(urlBeforePage + str(i))
 
+    # fetch data with multiple threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         future_to_url = {executor.submit(fetch_one, url, app, itemName): url for url in urls}
-
-
-    # for i in range(1, totalPage):
-    #     t = threading.Thread(target=fetch_one, args=(urlBeforePage,i,app,itemName))
-    #     threads.append(t)
-    #     t.start()
-    # for thread in threads:
-    #     thread.join()
 
 def process_data(itemName):
     data = list(mongo.db[itemName].find())
