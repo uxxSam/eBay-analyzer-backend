@@ -2,6 +2,9 @@ from flask import Flask,jsonify
 from flask_pymongo import PyMongo
 from flask import request
 
+import threading
+import threadpool
+import concurrent.futures
 import timeit
 import requests
 import simplejson
@@ -23,43 +26,51 @@ def home():
     print(" *** System Message *** Request finished in " + str(int((stopTime - startTime) * 1000)) + " ms")
     return json.dumps(res)
 
+def fetch_one(url,app,itemName):
+    with app.app_context():
+        try:
+            Jresponse = requests.get(url).text
+        except requests.ConnectionError:
+            print(" *** System Message *** Error: Connection Error")
+        # convert data to json and save to MongoDB
+        data = json.loads(Jresponse)
+        mongo.db[itemName].insert_many(data['findCompletedItemsResponse'][0]['searchResult'][0]['item'])
+
+def get_total_page(url):
+    try:
+        Jresponse = requests.get(url + str(1)).text
+    except requests.ConnectionError:
+        print(" *** System Message *** Error: Connection Error")
+    # convert data to json and save to MongoDB
+    data = json.loads(Jresponse)
+    return int(data['findCompletedItemsResponse'][0]['paginationOutput'][0]['totalPages'][0]) + 1
+
 def fetch_data(itemName):
     urlPrefix = "http://svcs.ebay.com/services/search/FindingService/v1?OPERATION-NAME=findCompletedItems&SERVICE-VERSION=1.7.0&SECURITY-APPNAME="
     apiKey = "SamXu-EbayMark-PRD-67a8f6fb5-f4fa7d8b"
     urlMiddlefix = "&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords="
-
-    # check if input is empty
-    if len(itemName) == 0:
-        print(" *** System Message *** Error: No item name given in request")
-        return 1
-
-    print(" *** System Message *** Started data fetch for item named: " + itemName)
     urlPostfix = "&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=BestMatch&outputSelector=PictureURLSuperSize&paginationInput.pageNumber="
-    pageNumber = 1
-    loadedRecordCount = 0
+    urlBeforePage = urlPrefix + apiKey + urlMiddlefix + itemName + urlPostfix
 
-    # start fetching data until hit last page (item < 100)
-    while True:
-        uri = urlPrefix + apiKey + urlMiddlefix + itemName + urlPostfix + str(pageNumber)
+    # first get one page of data to see how many pages exist
+    totalPage = get_total_page(urlBeforePage)
 
-        # try get data from api
-        try:
-            Jresponse = requests.get(uri).text
-        except requests.ConnectionError:
-            print(" *** System Message *** Error: Connection Error")
-            return 1
-        # convert data to json and save to MongoDB
-        data = json.loads(Jresponse)
+    # keep track of threads
+    urls = []
 
-        mongo.db[itemName].insert_many(data['findCompletedItemsResponse'][0]['searchResult'][0]['item'])
-        loadedRecordCount += int(data['findCompletedItemsResponse'][0]['searchResult'][0]['@count'])
-        pageNumber += 1
-        # break if hit last page
-        if data['findCompletedItemsResponse'][0]['searchResult'][0]['@count'] != '100':
-            break
+    for i in range(1, totalPage):
+        urls.append(urlBeforePage + str(i))
 
-    print(" *** System Message *** Loaded " + str(loadedRecordCount) + " records")
-    return 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        future_to_url = {executor.submit(fetch_one, url, app, itemName): url for url in urls}
+
+
+    # for i in range(1, totalPage):
+    #     t = threading.Thread(target=fetch_one, args=(urlBeforePage,i,app,itemName))
+    #     threads.append(t)
+    #     t.start()
+    # for thread in threads:
+    #     thread.join()
 
 def process_data(itemName):
     data = list(mongo.db[itemName].find())
