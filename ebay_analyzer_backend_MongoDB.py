@@ -1,6 +1,7 @@
 from flask import Flask,jsonify
 from flask_pymongo import PyMongo
 from flask import request
+from flask_cors import CORS
 
 import concurrent.futures
 import timeit
@@ -10,6 +11,7 @@ import json
 
 app = Flask(__name__)
 mongo = PyMongo(app)
+CORS(app)
 
 @app.route("/")
 
@@ -132,12 +134,14 @@ def process_data(itemName):
     analysisResult['monthlyAveragePrice'] = monthlyAveragePrice
 
     # include info for lowest and highest price item
+    analysisResult['lowestItemPrice'] = data[currLowestPriceIndex]['sellingStatus'][0]['convertedCurrentPrice'][0]['__value__']
     analysisResult['lowestItemPic'] = "" if 'pictureURLSuperSize' not in data[currLowestPriceIndex] else data[currLowestPriceIndex]['pictureURLSuperSize'][0]
     analysisResult['lowestItemName'] = data[currLowestPriceIndex]['title'][0]
     analysisResult['lowestItemDate'] = data[currLowestPriceIndex]['listingInfo'][0]['endTime'][0][:10]
     analysisResult['lowestItemUrl'] = data[currLowestPriceIndex]['viewItemURL'][0]
     analysisResult['lowestItemBids'] = 0 if 'bidCount' not in data[currLowestPriceIndex]['sellingStatus'][0] else data[currLowestPriceIndex]['sellingStatus'][0]['bidCount'][0]
 
+    analysisResult['highestItemPrice'] = data[currHighestPriceIndex]['sellingStatus'][0]['convertedCurrentPrice'][0]['__value__']
     analysisResult['highestItemPic'] = "" if 'pictureURLSuperSize' not in data[currHighestPriceIndex] else data[currHighestPriceIndex]['pictureURLSuperSize'][0]
     analysisResult['highestItemName'] = data[currHighestPriceIndex]['title'][0]
     analysisResult['highestItemDate'] = data[currHighestPriceIndex]['listingInfo'][0]['endTime'][0][:10]
